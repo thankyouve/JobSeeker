@@ -1,0 +1,26 @@
+.company-list {
+    padding: 20px;
+  }
+  
+  .company-item {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+  }
+  
+  .company-item button {
+    background-color: #ff4b4b;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  
+  .company-item button:hover {
+    background-color: #ff2a2a;
+  }
+  

@@ -1,0 +1,24 @@
+/* src/components/JobCard.css */
+.job-card {
+    border: 1px solid #ccc;
+    padding: 16px;
+    margin: 16px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 600px;
+  }
+  
+  .job-card h3 {
+    margin-top: 0;
+  }
+  
+  .job-card a {
+    color: #007bff;
+    text-decoration: none;
+  }
+  
+  .job-card a:hover {
+    text-decoration: underline;
+  }
+  
