@@ -1,19 +1,24 @@
-import requests
-from bs4 import BeautifulSoup
+import time
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
 import json
+import requests
 
 # Configurations for each company, including URL and HTML element selectors
 company_configs = [
     {
-        'name': 'Google',
-        'url': 'https://www.google.com/about/careers/applications/jobs/results/?category=DATA_CENTER_OPERATIONS&category=DEVELOPER_RELATIONS&category=HARDWARE_ENGINEERING&category=INFORMATION_TECHNOLOGY&category=MANUFACTURING_SUPPLY_CHAIN&category=NETWORK_ENGINEERING&category=PRODUCT_MANAGEMENT&category=PROGRAM_MANAGEMENT&category=SOFTWARE_ENGINEERING&category=TECHNICAL_INFRASTRUCTURE_ENGINEERING&category=TECHNICAL_SOLUTIONS&category=TECHNICAL_WRITING&category=USER_EXPERIENCE&employment_type=FULL_TIME&target_level=INTERN_AND_APPRENTICE&target_level=EARLY&q=%22Software%20Engineer%22&page=',
-        'list_selector': 'ul.spHGqe',  # Main container for all job cards (the list of job cards)
-        'job_selector': 'li.lLd3Je',  # Selector for each individual job card
-        'title_selector': 'h3.QJPWVe',  # Job title within the job card
-        'company_selector': 'span.RP7SMd',  # Company name within the job card
-        'location_selector': 'span.r0wTof',  # Job location within the job card
-        'experience_selector': 'span.wVSTAb', # Experience within the job card
-        'link_selector': 'a.WpHeLc.VfPpkd-mRLv6.VfPpkd-RLmnJb'  # Job link within the job card
+        'name': 'LinkedIn',
+        'url': 'https://www.linkedin.com/jobs/search/?distance=25&f_TPR=r86400&f_WT=1,3&geoId=101174742&keywords=software%20engineer&origin=JOB_SEARCH_PAGE_JOB_FILTER&refresh=true&start=',
+        'list_selector': 'ul.scaffold-layout__list-container',
+        'job_selector': 'li.jobs-search-results__list-item',
+        'title_selector': 'a.job-card-list__title',
+        'company_selector': 'span.job-card-container__primary-description',
+        'location_selector': 'li.job-card-container__metadata-item',
+        'link_selector': 'a.job-card-list__title'
     }
 ]
 
@@ -28,73 +33,66 @@ def delete_all_jobs():
     except requests.exceptions.RequestException as e:
         print(f"Error deleting jobs: {e}")
 
-def scrape_company_jobs(company):
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"}
-    page = 1
+def scrape_company_jobs(company, driver):
     jobs = []
+    page = 0
+    jobs_per_page = 25  # Each page on LinkedIn shows 25 job postings
 
     while True:
-        try:
-            # Update the URL to scrape the next page
-            url = f"{company['url']}{page}"
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            print(f"Request failed for {company['name']} on page {page}: {e}")
-            break
+        # Update the URL to get the current page's jobs
+        current_url = f"{company['url']}{page * jobs_per_page}"
+        driver.get(current_url)
 
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Use the list selector from the configuration to get the main job card list
-        job_list = soup.select_one(company['list_selector'])
-        if not job_list:
-            print(f"No job list found for {company['name']} on page {page}. Stopping pagination.")
+        try:
+            # Wait until the job list is present
+            job_list = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, company['list_selector']))
+            )
+        except Exception as e:
+            print(f"No job list found for {company['name']} on page {page}. Check HTML structure: {e}")
             break
 
         # Find all job cards within the job list
-        job_cards = job_list.select(company['job_selector'])
+        job_cards = job_list.find_elements(By.CSS_SELECTOR, company['job_selector'])
         if not job_cards:
-            print(f"No job cards found for {company['name']} on page {page}. Stopping pagination.")
+            print(f"No job cards found for {company['name']} on page {page}. Check HTML structure.")
             break
 
-        # Extract job data from each job card
         for job_card in job_cards:
             try:
-                # Extract Job Title
-                title = job_card.select_one(company['title_selector'])
-                title = title.get_text(strip=True) if title else "Title not found"
+                # Extract Job Title using a simpler approach to avoid parsing issues
+                title_element = job_card.find_element(By.CSS_SELECTOR, company['title_selector'])
+                title = title_element.get_attribute('aria-label') if title_element else "Title not found"
+
+                # If aria-label is not found, attempt to get text directly
+                if not title or title == "Title not found":
+                    title = title_element.text.strip() if title_element else "Title not found"
 
                 # Extract Company Name
-                company_name = job_card.select_one(company['company_selector'])
-                company_name = company_name.get_text(strip=True) if company_name else "Company not found"
+                company_name_element = job_card.find_element(By.CSS_SELECTOR, company['company_selector'])
+                company_name = company_name_element.text.strip() if company_name_element else "Company not found"
 
                 # Extract Location
-                location = job_card.select_one(company['location_selector'])
-                location = location.get_text(strip=True) if location else "Location not specified"
-                location = location if location.lower() != "remote" else "Remote"
-
-                # Extract Experience
-                experience = job_card.select_one(company['experience_selector'])
-                experience = experience.get_text(strip=True) if experience else "Experience not specified"
+                location_element = job_card.find_element(By.CSS_SELECTOR, company['location_selector'])
+                location = location_element.text.strip() if location_element else "Location not specified"
 
                 # Extract Job Link
-                link_tag = job_card.select_one(company['link_selector'])
-                link = f"https://www.google.com/about/careers/applications/{link_tag['href']}" if link_tag else "Link not found"
+                link_element = job_card.find_element(By.CSS_SELECTOR, company['link_selector'])
+                link = link_element.get_attribute("href") if link_element else "Link not found"
 
                 job = {
                     "company": company_name,
                     "title": title,
                     "location": location,
-                    "experience": experience,
                     "link": link,
                     "jobType": "Full-Time",
                 }
                 jobs.append(job)
-            except AttributeError as e:
+            except Exception as e:
                 print(f"Error parsing a job card for {company['name']} on page {page}: {e}")
 
         print(f"Scraped {len(job_cards)} jobs from {company['name']} on page {page}")
-        page += 1
+        page += 1  # Move to the next page
 
     return jobs
 
@@ -102,28 +100,44 @@ def post_jobs_to_backend(jobs):
     url = "http://localhost:5000/jobs"
     headers = {'Content-Type': 'application/json'}
 
-    for job in jobs:
+    batch_size = 50
+    for i in range(0, len(jobs), batch_size):
+        batch = jobs[i:i + batch_size]
         try:
-            response = requests.post(url, data=json.dumps(job), headers=headers)
-            if response.status_code == 201:
-                print(f"Successfully added job: {job['title']}")
+            response = requests.post(url, data=json.dumps(batch), headers=headers)
+            if response.status_code in [200, 201]:
+                print(f"Successfully added jobs batch: {i // batch_size + 1}")
             else:
-                print(f"Failed to add job: {response.status_code} - {response.text}")
+                print(f"Failed to add jobs batch: {i // batch_size + 1} - {response.status_code} - {response.text}")
         except requests.exceptions.RequestException as e:
-            print(f"Error sending job to backend: {e}")
+            print(f"Error sending jobs batch to backend: {e}")
 
 def main():
     # Step 1: Delete all existing jobs
     delete_all_jobs()
 
-    # Step 2: Scrape and post new jobs
+    # Step 2: Set up Selenium WebDriver
+    options = webdriver.ChromeOptions()
+    options.add_argument("--start-maximized")
+    options.add_argument('--disable-gpu')  # Disable GPU to avoid GPU-related errors
+    options.add_argument('--no-sandbox')  # Bypass OS security model
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
+    # Step 3: Wait for the user to manually log in
+    driver.get("https://www.linkedin.com/login")
+    input("Please log in to LinkedIn and press Enter to continue...")
+
+    # Step 4: Scrape and post new jobs
     all_jobs = []
     for company in company_configs:
-        jobs = scrape_company_jobs(company)
+        jobs = scrape_company_jobs(company, driver)
         all_jobs.extend(jobs)
 
     if all_jobs:
         post_jobs_to_backend(all_jobs)
+
+    # Step 5: Close the browser
+    driver.quit()
 
 if __name__ == "__main__":
     main()
